@@ -17,7 +17,7 @@ unzip terraform_1.3.1_linux_amd64.zip
 chmod +x terraform
 mv terraform /usr/local/bin
 export PATH=$PATH:/usr/local/bin
-Note: Use latest version of terrafom. It will also work.
+Note: Use latest version of terrafom. Code successfully working with Terraform version v1.7.5. I think,version 1.3.1 will also work.
 
 - [kops CLI] curl -Lo kops https://github.com/kubernetes/kops/releases/download/$(curl -s https://api.github.com/repos/kubernetes/kops/releases/latest | grep tag_name | cut -d '"' -f 4)/kops-linux-amd64
 chmod +x kops
@@ -37,17 +37,17 @@ Customize the following environment variables for your purpose:
 #export TF_VAR_kops_sub_domain=k8s.sundar.cloud
 #export TF_VAR_kops_aws_region=eu-central-1
 
-Note: I want to create cluster on subdomain "k8s.example.com"
+Note: I want to create cluster on subdomain "k8s.sundar.cloud"
 ```
 
 ### 2 a. AWS Resource Creation with Custom IAM User
 
 Create IAM "kops2" user. All resources(S3 buckets, DNS zones and the EC2 instances) will
-create by this user. It is recommendation. But if you want you can create all resources with root user(anupam) as per rspl aws account.
+create by this user. It is recommendation. But if you want to create all resources with root user(anupam) as per rspl aws account.
 
-It’s recommended to use a non-admin user for creating the kops specific AWS resources like S3 buckets, DNS zones and the EC2 instances. https://kops.sigs.k8s.io/, https://kops.sigs.k8s.io/terraform/
+It’s recommended to use a non-admin user for creating the kops specific AWS resources like S3 buckets, DNS zones and the EC2 instances. https://kops.sigs.k8s.io/getting_started/aws/
 
-Therefore, first call `terraform` with your admin user account to create an IAM user specific for kops.
+Therefore, first call `terraform` with your admin user account to create an IAM user(kops2) specific for kops.
 
 ```bash
 export AWS_ACCESS_KEY=$AWS_ACCESS_KEY_ADMIN_USER
@@ -73,11 +73,14 @@ kops_iam_secret = <sensitive>
 Now use kop2 user, to create other resources
 ```
 
-### 2.b Then, use the IAM user to create all other resources:
+### 2.b Use the IAM user(kops2) to create all other resources:
 
 ```bash
 #export AWS_ACCESS_KEY_KOPS_USER=$(terraform output kops_iam_key | tr -d '"')
 #export AWS_SECRET_KEY_KOPS_USE=$(terraform output kops_iam_secret | tr -d '"')
+
+Terrafom plan
+Terraform apply
 
 Plan output:--
 Apply complete! Resources: 7 added, 0 changed, 0 destroyed.
@@ -98,25 +101,24 @@ Note: Create .ssh folder also in the dircroty where keep all files of terraform.
 ### 3)  Get the nameserver information and enter them at your registrar:
 
 # terraform output kops_name_servers
-tolist([
-  "ns-1102.awsdns-09.org",
-  "ns-1768.awsdns-29.co.uk",
-  "ns-624.awsdns-14.net",
-  "ns-89.awsdns-11.com",
+kops_name_servers = tolist([
+  "ns-1137.awsdns-14.org",
+  "ns-1935.awsdns-49.co.uk",
+  "ns-247.awsdns-30.com",
+  "ns-596.awsdns-10.net",
 ])
 
+Above result came due to below code:--
 output "kops_name_servers" {
   value = tolist(aws_route53_zone.sub_domain.name_servers)
 }
 
 Note:--- Here you have to put all above nameserver to your domain registrar. 
-         It create two hosted zone i) sundar.cloud ii) k8s.sundar.cloud. We will
-		 add nameserver of "k8s.sundar.cloud" in hostinger.com as I domain purchase form
-		 hostinger.com. Change nameserver in "hostinger.com", add all above nameserver.
+Terrafom code created two hosted zone in route53 i) sundar.cloud ii) k8s.sundar.cloud.
+
+You need to add nameserver of "k8s.sundar.cloud" in hostinger.com as I purchase domain(sunder.cloud) purchase form hostinger.com. Change nameserver of domain "sunder.cloud", add all above nameserver which show in terrafom output.
 		 
-		 Testing: Create "A" recored under "k8s.sundar.cloud" whcih point to EC2 for 
-		          testing purpose. Check this, if it work fine, then go for next step.
-				      Otherwise wait for DNS propagation. 
+Testing: Create "A" recored under "k8s.sundar.cloud" whcih point to EC2 for testing purpose. Check this, if it work fine, then go for next step. Otherwise wait for DNS propagation. 
 ```
 
 ### 4. AWS Resource Creation with AWS root User(This steps not required)
@@ -231,3 +233,32 @@ terraform destroy -auto-approve
 ## Known Bugs
 
 - When installing Kubernetes Version `>1.25.1`, there is a pending `ebs-csi-controller` deployment. On the master node, run `kubectl scale deploy ebs-csi-controller --replicas=1 -n kube-system` to fix it and the cluster should work
+
+-Just note down
+ As per document https://kops.sigs.k8s.io/getting_started/aws/, you may add below permisson to kop2 user.
+ 
+AmazonEC2FullAccess
+AmazonRoute53FullAccess
+AmazonS3FullAccess
+IAMFullAccess
+AmazonVPCFullAccess
+AmazonSQSFullAccess
+AmazonEventBridgeFullAccess
+
+- Output of command "kops update cluster --name ${KOPS_CLUSTER_NAME} --yes", may be required sometime.
+
+Cluster configuration has been created.
+
+Suggestions:
+ * list clusters with: kops get cluster
+ * edit this cluster with: kops edit cluster k8s.sundar.cloud
+ * edit your node instance group: kops edit ig --name=k8s.sundar.cloud nodes-eu-central-1a
+ * edit your control-plane instance group: kops edit ig --name=k8s.sundar.cloud control-plane-eu-central-1a
+
+Finally configure your cluster with: kops update cluster --name k8s.sundar.cloud --yes --admin
+
+- Note: Keep all output of command when you create cluster, as it may required in the time of delete cluster.
+
+Remember s3 bucket name, required for delete kops cluster
+# export KOPS_STATE_STORE=s3://innocent-dog-kops-state
+# kops delete cluster --name k8s.sundar.cloud --yes
